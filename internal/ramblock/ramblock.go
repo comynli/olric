@@ -38,6 +38,11 @@ const (
 	defaultTableSize = uint64(1 << 20)
 
 	defaultMaxIdleTableTimeout = 15 * time.Minute
+
+	// defaultPurgeStaleEntries keeps the upstream behavior: compaction does not
+	// drop entries that have been overwritten by a newer version unless the
+	// engine explicitly opts in via the "purgeStaleEntries" config.
+	defaultPurgeStaleEntries = false
 )
 
 // RamBlock implements an in-memory storage engine.
@@ -53,6 +58,7 @@ func DefaultConfig() *storage.Config {
 	options := storage.NewConfig(nil)
 	options.Add("tableSize", defaultTableSize)
 	options.Add("maxIdleTableTimeout", defaultMaxIdleTableTimeout)
+	options.Add("purgeStaleEntries", defaultPurgeStaleEntries)
 	return options
 }
 

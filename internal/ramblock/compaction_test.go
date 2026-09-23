@@ -159,6 +159,7 @@ func TestRamBlock_Compaction_PurgesStaleEntries(t *testing.T) {
 	const tableSize = 16 * 1024
 	c := DefaultConfig()
 	c.Add("tableSize", uint64(tableSize))
+	c.Add("purgeStaleEntries", true)
 	s := testRamBlock(t, c)
 
 	key := "k"
@@ -193,6 +194,50 @@ func TestRamBlock_Compaction_PurgesStaleEntries(t *testing.T) {
 	require.Equal(t, writes-1, recycled)
 }
 
+// TestRamBlock_Compaction_PurgeDisabledByDefault pins the opt-in semantics of
+// the stale entry purge: with the default configuration
+// (purgeStaleEntries=false) compaction must keep overwritten entries to stay
+// compatible with the upstream behavior, so the read-only tables holding the
+// stale copies are neither purged nor recycled.
+func TestRamBlock_Compaction_PurgeDisabledByDefault(t *testing.T) {
+	const tableSize = 16 * 1024
+	c := DefaultConfig()
+	c.Add("tableSize", uint64(tableSize))
+	s := testRamBlock(t, c)
+
+	key := "k"
+	valueLen := tableSize - len(key) - table.MetadataLength - 100
+	hkey := xxhash.Sum64([]byte(key))
+
+	const writes = 50
+	for i := 0; i < writes; i++ {
+		putStringEntry(t, s, key, fmt.Sprintf("%0*d", valueLen, i))
+	}
+
+	rb := s.(*RamBlock)
+	require.Equal(t, writes, len(rb.tables))
+
+	compactUntilDone(t, s)
+
+	// The purge is opt-in, so the stale copies survive and no read-only table
+	// is recycled.
+	require.Equal(t, writes, s.Stats().Length)
+	require.Equal(t, writes, len(rb.tables))
+
+	var recycled int
+	for _, tb := range rb.tables {
+		if tb.State() == table.RecycledState {
+			recycled++
+		}
+	}
+	require.Equal(t, 0, recycled)
+
+	// The latest version must still be readable.
+	res, err := s.Get(hkey)
+	require.NoError(t, err)
+	require.Equal(t, fmt.Sprintf("%0*d", valueLen, writes-1), string(res.Value()))
+}
+
 // TestRamBlock_Compaction_PurgeKeepsLiveEntries verifies that the stale entry
 // purge never drops live data, even when overwritten and untouched keys are
 // spread over multiple tables.
@@ -200,6 +245,7 @@ func TestRamBlock_Compaction_PurgeKeepsLiveEntries(t *testing.T) {
 	const tableSize = 1024
 	c := DefaultConfig()
 	c.Add("tableSize", uint64(tableSize))
+	c.Add("purgeStaleEntries", true)
 	s := testRamBlock(t, c)
 
 	// Every entry is 9 + 62 + 29 = 100 bytes, so ten entries fit into a table.
@@ -237,6 +283,7 @@ func TestRamBlock_Compaction_PurgeThenEvict(t *testing.T) {
 	const tableSize = 1024
 	c := DefaultConfig()
 	c.Add("tableSize", uint64(tableSize))
+	c.Add("purgeStaleEntries", true)
 	s := testRamBlock(t, c)
 
 	rb := s.(*RamBlock)

@@ -114,6 +114,16 @@ func (rb *RamBlock) hasNewerVersion(hkey uint64, t *table.Table) bool {
 // the total number of entries, and the temporary memory usage is bounded by
 // the number of live keys.
 func (rb *RamBlock) purgeStaleEntries() error {
+	// The purge is opt-in (see defaultPurgeStaleEntries): it is skipped unless
+	// the "purgeStaleEntries" engine config is explicitly set to true.
+	enabled, err := rb.config.Get("purgeStaleEntries")
+	if err != nil {
+		return nil
+	}
+	if v, ok := enabled.(bool); !ok || !v {
+		return nil
+	}
+
 	if len(rb.tables) <= 1 {
 		return nil
 	}
